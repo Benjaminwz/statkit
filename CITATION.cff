@@ -1,8 +1,18 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 title: "statkit"
-version: 0.1.0
+abstract: "Reproducible statistics for research in pure NumPy: hypothesis tests, effect sizes with exact confidence intervals, bootstrap and permutation methods, multiple-comparison correction, power analysis, meta-analysis and APA-style reporting."
+version: 0.2.0
+date-released: 2026-10-03
 authors:
   - alias: "Benjaminwz"
 license: MIT
 repository-code: "https://github.com/Benjaminwz/statkit"
+keywords:
+  - statistics
+  - reproducible research
+  - effect size
+  - bootstrap
+  - permutation test
+  - power analysis
+  - meta-analysis

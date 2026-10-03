@@ -1,8 +1,15 @@
 import numpy as np
 import pytest
 
-from statkit import (benjamini_hochberg, bonferroni, bootstrap_ci, cohens_d, hedges_g, holm,
-                     permutation_test)
+from statkit import (
+    benjamini_hochberg,
+    bonferroni,
+    bootstrap_ci,
+    cohens_d,
+    hedges_g,
+    holm,
+    permutation_test,
+)
 from statkit.cli import main
 
 
