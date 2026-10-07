@@ -243,3 +243,78 @@ def nct_ncp_ci(t_obs, df, alpha):
             hi += 2 * (hi - lo)
         return bisect(f, lo, hi)
     return solve(1.0 - alpha / 2.0), solve(alpha / 2.0)
+
+
+# ------------------------------------------------------------ studentized range (Tukey)
+_PHI_H = 0.01
+_PHI_LO, _PHI_HI = -38.0, 38.0
+_PHI_X = np.arange(_PHI_LO, _PHI_HI + _PHI_H / 2, _PHI_H)
+_PHI_F = np.array([norm_cdf(float(x)) for x in _PHI_X])
+_PHI_D = np.exp(-0.5 * _PHI_X ** 2) / math.sqrt(2.0 * math.pi)
+
+
+def _norm_cdf_vec(x):
+    """Vectorised normal CDF: cubic Hermite interpolation on an exact table (error ~1e-11)."""
+    x = np.clip(np.asarray(x, dtype=float), _PHI_LO, _PHI_HI - 2 * _PHI_H)
+    pos = (x - _PHI_LO) / _PHI_H
+    i = pos.astype(int)
+    t = pos - i
+    t2, t3 = t * t, t * t * t
+    return ((2 * t3 - 3 * t2 + 1) * _PHI_F[i] + (t3 - 2 * t2 + t) * _PHI_H * _PHI_D[i]
+            + (-2 * t3 + 3 * t2) * _PHI_F[i + 1] + (t3 - t2) * _PHI_H * _PHI_D[i + 1])
+
+
+def _gauss_panels(lo, hi, panels, order):
+    """Composite Gauss-Legendre nodes and weights on [lo, hi]."""
+    x, w = np.polynomial.legendre.leggauss(order)
+    edges = np.linspace(lo, hi, panels + 1)
+    half = 0.5 * np.diff(edges)
+    mid = 0.5 * (edges[1:] + edges[:-1])
+    return (mid[:, None] + half[:, None] * x[None, :]).ravel(), (half[:, None] * w[None, :]).ravel()
+
+
+_Z, _ZW = _gauss_panels(-9.0, 9.0, 36, 8)
+_PHI_Z = _norm_cdf_vec(_Z)
+_PDF_Z = np.exp(-0.5 * _Z ** 2) / math.sqrt(2.0 * math.pi)
+
+
+def _range_cdf_known_sigma(w, k):
+    """P(range of k standard normals <= w) for an array ``w`` of widths."""
+    w = np.asarray(w, dtype=float)
+    diff = _PHI_Z[None, :] - _norm_cdf_vec(_Z[None, :] - w[:, None])
+    return np.clip(k * (np.clip(diff, 0.0, 1.0) ** (k - 1) * (_PDF_Z * _ZW)[None, :]).sum(axis=1),
+                   0.0, 1.0)
+
+
+def studentized_range_cdf(q, k, df):
+    """P(Q <= q) for the studentized range with ``k`` groups and ``df`` degrees of freedom."""
+    if q <= 0:
+        return 0.0
+    if math.isinf(df):
+        return float(_range_cdf_known_sigma(np.array([q]), k)[0])
+    if df > 1e5:
+        df = 1e5
+    half_df = df / 2.0
+    # s = sqrt(chi2_df / df) has density 2 (df/2)^(df/2) / Gamma(df/2) s^(df-1) exp(-df s^2/2)
+    if df <= 30:
+        lo, hi = 0.0, math.sqrt(chi2_isf(1e-14, df) / df)
+    else:
+        sd = 1.0 / math.sqrt(2.0 * df)
+        lo, hi = max(0.0, 1.0 - 10 * sd), 1.0 + 14 * sd
+    s, sw = _gauss_panels(lo, hi, 48, 10)
+    log_const = math.log(2.0) + half_df * math.log(half_df) - math.lgamma(half_df)
+    dens = np.exp(log_const + (df - 1) * np.log(s) - half_df * s * s)
+    return float(np.clip((dens * sw * _range_cdf_known_sigma(q * s, k)).sum(), 0.0, 1.0))
+
+
+def studentized_range_sf(q, k, df):
+    """P(Q >= q)."""
+    return 1.0 - studentized_range_cdf(q, k, df)
+
+
+def studentized_range_isf(p, k, df):
+    """The critical value q with P(Q >= q) = p."""
+    if not 0.0 < p < 1.0:
+        raise ValueError("p must be in (0, 1)")
+    hi = _upper_bracket(lambda x: studentized_range_sf(x, k, df), p, start=4.0)
+    return bisect(lambda x: studentized_range_sf(x, k, df) - p, 0.0, hi, iters=100)

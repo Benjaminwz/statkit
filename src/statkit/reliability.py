@@ -75,3 +75,88 @@ def cohens_kappa(rater1, rater2, weights=None, alpha=0.05):
     se = math.sqrt(max(0.0, (a - b) / (n * (1.0 - pe) ** 2)))
     z = norm_isf(alpha / 2)
     return float(kappa), float(max(-1.0, kappa - z * se)), float(min(1.0, kappa + z * se))
+
+
+_ICC_KINDS = ("ICC1", "ICC2", "ICC3", "ICC1k", "ICC2k", "ICC3k")
+
+
+def _icc_parts(ratings):
+    x = np.asarray(ratings, dtype=float)
+    if x.ndim != 2 or x.shape[0] < 2 or x.shape[1] < 2:
+        raise ValueError("ratings must be a 2-D array: at least 2 subjects x 2 raters")
+    if not np.all(np.isfinite(x)):
+        raise ValueError("ratings contains NaN or infinite values")
+    n, k = x.shape
+    grand = x.mean()
+    ssr = k * float(((x.mean(axis=1) - grand) ** 2).sum())
+    ssc = n * float(((x.mean(axis=0) - grand) ** 2).sum())
+    sst = float(((x - grand) ** 2).sum())
+    sse = sst - ssr - ssc
+    msr, msc = ssr / (n - 1), ssc / (k - 1)
+    mse = sse / ((n - 1) * (k - 1))
+    msw = (ssc + sse) / (n * (k - 1))
+    if msr == 0 and msc == 0 and mse == 0:
+        raise ValueError("ratings have zero variance; ICC is undefined")
+    return n, k, msr, msc, mse, msw
+
+
+def icc_table(ratings, alpha=0.05):
+    """All six intraclass correlation coefficients of Shrout & Fleiss (1979) / McGraw & Wong (1996).
+
+    ``ratings`` is ``n_subjects x k_raters``. Returns ``{kind: dict}`` for ``ICC1``, ``ICC2``,
+    ``ICC3`` (single rater: one-way random, two-way random, two-way mixed / consistency) and
+    ``ICC1k``, ``ICC2k``, ``ICC3k`` (mean of ``k`` raters), each with ``icc``, ``ci``, ``F``,
+    ``df`` and ``p_value``. The intervals are the F-based ones (Satterthwaite for ICC2 / ICC2k).
+    """
+    from ._dist import f_sf
+    alpha = check_alpha(alpha)
+    n, k, msr, msc, mse, msw = _icc_parts(ratings)
+
+    def f_ci(f, dfn, dfd):
+        return f / f_isf(alpha / 2, dfn, dfd), f * f_isf(alpha / 2, dfd, dfn)
+
+    out = {}
+    # ICC1 / ICC1k: one-way random effects
+    f1, d1, d2 = msr / msw, n - 1, n * (k - 1)
+    fl, fu = f_ci(f1, d1, d2)
+    out["ICC1"] = dict(icc=(msr - msw) / (msr + (k - 1) * msw), F=f1, df=(d1, d2),
+                       ci=((fl - 1) / (fl + k - 1), (fu - 1) / (fu + k - 1)))
+    out["ICC1k"] = dict(icc=(msr - msw) / msr, F=f1, df=(d1, d2), ci=(1 - 1 / fl, 1 - 1 / fu))
+    # ICC3 / ICC3k: two-way mixed, consistency
+    f3, e1, e2 = msr / mse, n - 1, (n - 1) * (k - 1)
+    gl, gu = f_ci(f3, e1, e2)
+    out["ICC3"] = dict(icc=(msr - mse) / (msr + (k - 1) * mse), F=f3, df=(e1, e2),
+                       ci=((gl - 1) / (gl + k - 1), (gu - 1) / (gu + k - 1)))
+    out["ICC3k"] = dict(icc=(msr - mse) / msr, F=f3, df=(e1, e2), ci=(1 - 1 / gl, 1 - 1 / gu))
+    # ICC2 / ICC2k: two-way random, absolute agreement (Satterthwaite interval)
+    icc2 = (msr - mse) / (msr + (k - 1) * mse + k * (msc - mse) / n)
+    icc2k = (msr - mse) / (msr + (msc - mse) / n)
+    fj = msc / mse
+    a = k * icc2 * fj + n * (1 + (k - 1) * icc2) - k * icc2
+    v = ((k - 1) * (n - 1) * a ** 2) / ((n - 1) * k ** 2 * icc2 ** 2 * fj ** 2
+                                        + (n * (1 + (k - 1) * icc2) - k * icc2) ** 2)
+    f3c, f3u = f_isf(alpha / 2, n - 1, v), f_isf(alpha / 2, v, n - 1)
+    denom = k * msc + (k * n - k - n) * mse
+    lo = n * (msr - f3c * mse) / (f3c * denom + n * msr)
+    hi = n * (f3u * msr - mse) / (denom + n * f3u * msr)
+    out["ICC2"] = dict(icc=icc2, F=f3, df=(e1, e2), ci=(lo, hi))
+    out["ICC2k"] = dict(icc=icc2k, F=f3, df=(e1, e2),
+                        ci=(lo * k / (1 + lo * (k - 1)), hi * k / (1 + hi * (k - 1))))
+    for rec in out.values():
+        rec["p_value"] = float(min(1.0, f_sf(rec["F"], *rec["df"])))
+        rec["icc"], rec["F"] = float(rec["icc"]), float(rec["F"])
+        rec["ci"] = (float(rec["ci"][0]), float(rec["ci"][1]))
+    return {kind: out[kind] for kind in _ICC_KINDS}
+
+
+def icc(ratings, kind="ICC2", alpha=0.05):
+    """One intraclass correlation coefficient: ``(icc, lower, upper)``. See :func:`icc_table`.
+
+    Rule of thumb for choosing: ``ICC1`` if each subject is rated by different raters, ``ICC2``
+    if raters are a random sample and absolute agreement matters, ``ICC3`` if these raters are
+    the only ones of interest (consistency). Add ``k`` when you will use the mean of the raters.
+    """
+    if kind not in _ICC_KINDS:
+        raise ValueError(f"kind must be one of {_ICC_KINDS}")
+    rec = icc_table(ratings, alpha)[kind]
+    return rec["icc"], rec["ci"][0], rec["ci"][1]
