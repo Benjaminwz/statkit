@@ -49,6 +49,16 @@ sk.fisher_exact([[8, 2], [1, 5]]).apa()          # 'OR = 20.00, p = .035, 95% CI
 sk.proportion_ci(18, 60)                         # Wilson: (0.30, 0.199, 0.425)
 ```
 
+Post-hoc comparisons, equivalence and agreement:
+
+```python
+print(sk.tukey_hsd(low, mid, high, labels=["low", "mid", "high"]))       # Tukey HSD with simultaneous CIs
+sk.games_howell(low, mid, high)                  # no equal-variance assumption
+sk.dunn(low, mid, high, adjust="holm")           # after Kruskal-Wallis
+sk.tost_ind(a, b, low=-0.5, high=0.5).apa()      # TOST: are the groups equivalent within ±0.5?
+sk.icc(ratings, "ICC2")                          # (0.29, 0.02, 0.76) Shrout & Fleiss example
+```
+
 Meta-analysis:
 
 ```python
@@ -68,13 +78,15 @@ print(sk.meta_analysis([0.30, 0.15, 0.62, -0.05, 0.41], ses=[0.2, 0.14, 0.3, 0.1
 | Rank-based tests | `mannwhitneyu`, `wilcoxon` (exact or asymptotic, tie-corrected), `kruskal` |
 | Normality | `shapiro` (Shapiro-Wilk, Royston 1995) |
 | Counts and proportions | `chi2_contingency` (Yates, Cramér's V), `fisher_exact`, `proportion_ci` (Wilson, Clopper-Pearson, Jeffreys, Agresti-Coull) |
+| Post-hoc | `tukey_hsd` (Tukey-Kramer, studentized range), `games_howell`, `dunn` (tie-corrected, adjustable), `pairwise_ttests` (Welch or Student, adjustable); each returns a `PosthocResult` table with `.significant()`, `.to_dict()` |
+| Equivalence | `tost_ind`, `tost_rel`, `tost_1samp` (two one-sided tests; the `1 - 2α` interval is reported, so the verdict and the interval always agree) |
 | Correlation | `pearsonr` and `spearmanr` (Fisher z intervals), `kendalltau` (tau-b) |
 | Effect sizes | `cohens_d`, `hedges_g`, `glass_delta`, `cohens_dz`, exact intervals `cohens_d_ci` / `hedges_g_ci` / `cohens_dz_ci`, `cliffs_delta`, `prob_superiority`; eta², omega², epsilon², Cramér's V and rank-biserial r come with the tests |
 | Resampling | `bootstrap_ci` (percentile, basic, BCa), `bootstrap_diff_ci` (independent or paired), `permutation_test` (one- or two-sided, paired, exact enumeration, custom statistic) |
 | Multiple comparisons | `bonferroni`, `sidak`, `holm`, `holm_sidak`, `hochberg`, `benjamini_hochberg`, `benjamini_yekutieli`, `adjust_pvalues` |
 | Power and sample size | `power_ttest`, `sample_size_ttest`, `min_detectable_effect` (exact, via the non-central t) |
 | Meta-analysis | `meta_analysis` (fixed / random effects, DerSimonian-Laird or Paule-Mandel, Q, I², tau², prediction interval) |
-| Reliability | `cronbach_alpha` (Feldt interval), `cohens_kappa` (nominal, linear or quadratic weights, with CI) |
+| Reliability | `cronbach_alpha` (Feldt interval), `cohens_kappa` (nominal, linear or quadratic weights, with CI), `icc` / `icc_table` (all six intraclass correlations of Shrout & Fleiss with F-based intervals) |
 | Reporting | `TestResult.apa()`, `.summary()`, `.to_dict()`, `format_p` |
 
 ## Choices worth knowing
@@ -117,7 +129,12 @@ default `--format json`. Other commands:
 statkit describe data.csv --column score
 statkit adjust 0.001 0.02 0.04 0.3 --method holm
 statkit power --effect-size 0.5            # per-group n for 80 % power; add --n 64 for the power instead
+statkit posthoc data.csv --group-col group --value-col score --method tukey   # or games-howell, dunn, ttest
+statkit tost a.csv b.csv --column score --low -0.5 --high 0.5                 # add --paired for matched rows
+statkit icc ratings.csv --columns rater1 rater2 rater3                        # all six ICC forms
 ```
+
+`posthoc` reads a long-format CSV (one row per observation); `icc` a wide one (one row per subject).
 
 CSV files exported from Excel (UTF-8 with BOM) work. `python -m statkit ...` is equivalent.
 
@@ -125,8 +142,9 @@ CSV files exported from Excel (UTF-8 with BOM) work. `python -m statkit ...` is 
 
 `pytest` compares statkit with SciPy on randomised data for every test above (t, ANOVA, Levene, Mann-Whitney
 exact and asymptotic, Wilcoxon, Kruskal-Wallis, Shapiro-Wilk, chi-square, Fisher, correlations,
-proportion intervals, exact permutation tests, BCa bootstrap), and with statsmodels for multiple-comparison
-corrections, meta-analysis and kappa. Power calculations are checked against G\*Power. The suite passes on
+proportion intervals, exact permutation tests, BCa bootstrap, Tukey HSD and the studentized-range distribution),
+and with statsmodels for multiple-comparison corrections, meta-analysis, kappa and TOST. Dunn's test was checked
+against scikit-posthocs and the intraclass correlations against the worked example of Shrout & Fleiss (1979). Power calculations are checked against G\*Power. The suite passes on
 Python 3.9 with the oldest supported NumPy and on current releases.
 
 ```bash

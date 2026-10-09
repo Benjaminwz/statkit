@@ -4,6 +4,11 @@
     statkit describe data.csv --column score    descriptive statistics
     statkit adjust 0.01 0.04 0.03 --method holm multiple-comparison correction
     statkit power --effect-size 0.5             sample size for 80 % power (or --n for power)
+    statkit posthoc data.csv --group-col g --value-col y --method tukey
+                                                pairwise comparisons after an ANOVA / Kruskal-Wallis
+    statkit tost a.csv b.csv --column y --low -0.5 --high 0.5
+                                                equivalence test (two one-sided tests)
+    statkit icc ratings.csv --columns r1 r2 r3  intraclass correlation (all six forms)
 """
 import argparse
 import csv
@@ -20,18 +25,25 @@ from . import (
     bootstrap_ci,
     cliffs_delta,
     describe,
+    dunn,
+    games_howell,
     hedges_g,
     hedges_g_ci,
+    icc_table,
     mannwhitneyu,
+    pairwise_ttests,
     permutation_test,
     power_ttest,
     sample_size_ttest,
+    tost_ind,
+    tost_rel,
     ttest_ind,
     ttest_rel,
+    tukey_hsd,
     wilcoxon,
 )
 
-_COMMANDS = ("describe", "adjust", "power")
+_COMMANDS = ("describe", "adjust", "power", "posthoc", "tost", "icc")
 
 
 def _read_column(path, column, keep_blank=False):
@@ -198,10 +210,120 @@ def _power(argv):
     _emit({**out, "effect_size": args.effect_size, **common})
 
 
+def _read_groups(path, group_col, value_col):
+    """Long-format CSV: one row per observation. Returns ``(labels, [values per group])``."""
+    with open(path, newline="", encoding="utf-8-sig") as fh:
+        reader = csv.DictReader(fh)
+        for col in (group_col, value_col):
+            if col not in (reader.fieldnames or []):
+                raise SystemExit(f"column '{col}' not found in {path}")
+        groups = {}
+        for line, row in enumerate(reader, start=2):
+            cell = (row[value_col] or "").strip()
+            if cell == "":
+                continue
+            try:
+                groups.setdefault((row[group_col] or "").strip(), []).append(float(cell))
+            except ValueError:
+                raise SystemExit(f"{path}, line {line}: '{cell}' is not a number") from None
+    return list(groups), list(groups.values())
+
+
+def _posthoc(argv):
+    ap = argparse.ArgumentParser(prog="statkit posthoc",
+                                 description="Pairwise comparisons between groups.")
+    ap.add_argument("file", help="CSV with one row per observation")
+    ap.add_argument("--group-col", required=True)
+    ap.add_argument("--value-col", required=True)
+    ap.add_argument("--method", choices=["tukey", "games-howell", "dunn", "ttest"],
+                    default="tukey")
+    ap.add_argument("--adjust", default="holm", help="p adjustment for dunn / ttest (default holm)")
+    ap.add_argument("--alpha", type=float, default=0.05)
+    ap.add_argument("--format", choices=["json", "text"], default="json")
+    args = ap.parse_args(argv)
+    labels, groups = _read_groups(args.file, args.group_col, args.value_col)
+    try:
+        if args.method == "tukey":
+            res = tukey_hsd(*groups, labels=labels, alpha=args.alpha)
+        elif args.method == "games-howell":
+            res = games_howell(*groups, labels=labels, alpha=args.alpha)
+        elif args.method == "dunn":
+            res = dunn(*groups, labels=labels, adjust=args.adjust)
+        else:
+            res = pairwise_ttests(*groups, labels=labels, adjust=args.adjust, alpha=args.alpha)
+    except ValueError as err:
+        raise SystemExit(f"cannot analyse these data: {err}") from None
+    if args.format == "text":
+        _emit(None, True, str(res))
+    else:
+        _emit({**res.to_dict(), "groups": labels, "alpha": args.alpha, "versions": _versions()})
+
+
+def _tost(argv):
+    ap = argparse.ArgumentParser(prog="statkit tost",
+                                 description="Equivalence test (TOST) for two groups.")
+    ap.add_argument("group_a")
+    ap.add_argument("group_b")
+    ap.add_argument("--column", required=True)
+    ap.add_argument("--low", type=float, required=True, help="lower equivalence bound (raw units)")
+    ap.add_argument("--high", type=float, required=True, help="upper equivalence bound")
+    ap.add_argument("--paired", action="store_true")
+    ap.add_argument("--alpha", type=float, default=0.05)
+    ap.add_argument("--format", choices=["json", "text"], default="json")
+    args = ap.parse_args(argv)
+    if args.paired:
+        pairs = [(x, y) for x, y in zip(_read_column(args.group_a, args.column, True),
+                                        _read_column(args.group_b, args.column, True))
+                 if x is not None and y is not None]
+        a, b = [p[0] for p in pairs], [p[1] for p in pairs]
+    else:
+        a = _read_column(args.group_a, args.column)
+        b = _read_column(args.group_b, args.column)
+    try:
+        res = (tost_rel if args.paired else tost_ind)(a, b, args.low, args.high, alpha=args.alpha)
+    except ValueError as err:
+        raise SystemExit(f"cannot analyse these data: {err}") from None
+    verdict = "equivalent" if res.details["equivalent"] else "equivalence not shown"
+    if args.format == "text":
+        lo, hi = res.ci
+        _emit(None, True, f"{res.test}: {verdict} within ({args.low:g}, {args.high:g})\n"
+              f"difference = {res.estimate:.4f}, {res.conf_level * 100:g}% CI "
+              f"[{lo:.4f}, {hi:.4f}], t({res.df:.2f}) = {res.statistic:.3f}, p = "
+              f"{res.p_value:.4f}")
+    else:
+        _emit({**res.to_dict(), "verdict": verdict, "versions": _versions()})
+
+
+def _icc(argv):
+    ap = argparse.ArgumentParser(prog="statkit icc", description="Intraclass correlation.")
+    ap.add_argument("file", help="CSV with one row per subject and one column per rater")
+    ap.add_argument("--columns", nargs="+", required=True, help="rater columns")
+    ap.add_argument("--alpha", type=float, default=0.05)
+    ap.add_argument("--format", choices=["json", "text"], default="json")
+    args = ap.parse_args(argv)
+    cols = [_read_column(args.file, c, True) for c in args.columns]
+    rows = [r for r in zip(*cols) if all(v is not None for v in r)]
+    try:
+        table = icc_table(rows, args.alpha)
+    except ValueError as err:
+        raise SystemExit(f"cannot analyse these data: {err}") from None
+    if args.format == "text":
+        lines = [f"{len(rows)} subjects x {len(cols)} raters"]
+        for kind, r in table.items():
+            lines.append(f"{kind:6s} {r['icc']:6.3f}  {100 * (1 - args.alpha):g}% CI "
+                         f"[{r['ci'][0]:.3f}, {r['ci'][1]:.3f}]  F({r['df'][0]}, {r['df'][1]}) = "
+                         f"{r['F']:.2f}")
+        _emit(None, True, "\n".join(lines))
+    else:
+        _emit({"n_subjects": len(rows), "n_raters": len(cols), "alpha": args.alpha,
+               "icc": table, "versions": _versions()})
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] in _COMMANDS:
-        {"describe": _describe, "adjust": _adjust, "power": _power}[argv[0]](argv[1:])
+        {"describe": _describe, "adjust": _adjust, "power": _power, "posthoc": _posthoc,
+         "tost": _tost, "icc": _icc}[argv[0]](argv[1:])
     else:
         _compare(argv)
 

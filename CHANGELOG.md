@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0 (2026-10-07)
+
+### Added
+- Post-hoc comparisons returning a `PosthocResult` table: `tukey_hsd` (Tukey-Kramer, simultaneous
+  intervals), `games_howell`, `dunn` (tie-corrected, adjustable) and `pairwise_ttests`.
+- Studentized-range distribution (`cdf`, `sf`, `isf`) in pure NumPy, accurate to about 1e-10 against SciPy.
+- Equivalence tests with two one-sided tests: `tost_ind`, `tost_rel`, `tost_1samp`.
+- Intraclass correlation: `icc` and `icc_table` (ICC1, ICC2, ICC3 and their k-rater forms, F-based intervals).
+- Command line: `posthoc`, `tost` and `icc` commands.
+- Tests against SciPy (Tukey HSD, studentized range), statsmodels (TOST), scikit-posthocs (Dunn) and the
+  Shrout & Fleiss (1979) worked example (ICC).
+
 ## 0.2.0 (2026-10-03)
 
 A large step toward what papers and reviews expect. Still NumPy only at runtime.

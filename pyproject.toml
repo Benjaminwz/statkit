@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "statkit"
-version = "0.2.0"
+version = "0.3.0"
 description = "Reproducible statistics for research in pure NumPy: t-tests, ANOVA, rank tests, effect sizes with exact CIs, BCa bootstrap, permutation tests, multiple-comparison correction, power, meta-analysis, APA-style output."
 readme = "README.md"
 requires-python = ">=3.9"

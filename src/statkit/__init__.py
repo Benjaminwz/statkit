@@ -15,6 +15,7 @@ from .effect_size import (
                           hedges_g_ci,
                           prob_superiority,
 )
+from .equivalence import tost_1samp, tost_ind, tost_rel
 from .meta import MetaResult, meta_analysis
 from .multiple import (
                           adjust_pvalues,
@@ -30,8 +31,9 @@ from .nonparametric import kruskal, mannwhitneyu, wilcoxon
 from .normality import shapiro
 from .parametric import anova_oneway, levene, ttest_1samp, ttest_ind, ttest_rel
 from .permutation import permutation_test
+from .posthoc import PosthocResult, dunn, games_howell, pairwise_ttests, tukey_hsd
 from .power import min_detectable_effect, power_ttest, sample_size_ttest
-from .reliability import cohens_kappa, cronbach_alpha
+from .reliability import cohens_kappa, cronbach_alpha, icc, icc_table
 
 __all__ = [
     # descriptive & reporting
@@ -54,6 +56,10 @@ __all__ = [
     "benjamini_yekutieli", "adjust_pvalues",
     # power, meta-analysis, reliability
     "power_ttest", "sample_size_ttest", "min_detectable_effect",
-    "meta_analysis", "MetaResult", "cronbach_alpha", "cohens_kappa",
+    "meta_analysis", "MetaResult", "cronbach_alpha", "cohens_kappa", "icc", "icc_table",
+    # post-hoc comparisons
+    "tukey_hsd", "games_howell", "dunn", "pairwise_ttests", "PosthocResult",
+    # equivalence
+    "tost_ind", "tost_rel", "tost_1samp",
 ]
-__version__ = "0.2.0"
+__version__ = "0.3.0"

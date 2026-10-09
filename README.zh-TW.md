@@ -39,13 +39,15 @@ print(結果.apa())
 | 無母數檢定 | `mannwhitneyu`、`wilcoxon`（精確或近似、含同分校正）、`kruskal` |
 | 常態性檢定 | `shapiro`（Shapiro-Wilk） |
 | 次數與比例 | `chi2_contingency`（卡方、Cramér's V）、`fisher_exact`、`proportion_ci`（Wilson、Clopper-Pearson 等） |
+| 事後比較 | `tukey_hsd`（Tukey-Kramer、學生化全距分布）、`games_howell`（不假設變異數相等）、`dunn`（Kruskal-Wallis 之後用，含同分校正與 p 值調整）、`pairwise_ttests`；回傳 `PosthocResult` 表格 |
+| 等效性檢定 | `tost_ind`、`tost_rel`、`tost_1samp`（兩個單尾檢定 TOST；報告 `1 - 2α` 信賴區間，所以結論和區間一定一致） |
 | 相關 | `pearsonr`、`spearmanr`、`kendalltau`（含信賴區間） |
 | 效果量 | `cohens_d`、`hedges_g`、`glass_delta`、`cohens_dz`、精確信賴區間（`hedges_g_ci` 等）、`cliffs_delta`、`prob_superiority` |
 | 重抽樣 | `bootstrap_ci`（percentile、basic、BCa）、`bootstrap_diff_ci`（獨立或成對）、`permutation_test`（單尾／雙尾、成對、精確列舉、自訂統計量） |
 | 多重比較校正 | `bonferroni`、`sidak`、`holm`、`holm_sidak`、`hochberg`、`benjamini_hochberg`、`benjamini_yekutieli`、`adjust_pvalues` |
 | 檢定力與樣本數 | `power_ttest`、`sample_size_ttest`、`min_detectable_effect` |
 | 統合分析 | `meta_analysis`（固定／隨機效果、Q、I²、tau²、預測區間） |
-| 信度與一致性 | `cronbach_alpha`（含信賴區間）、`cohens_kappa`（可加權、含信賴區間） |
+| 信度與一致性 | `cronbach_alpha`（含信賴區間）、`cohens_kappa`（可加權、含信賴區間）、`icc`／`icc_table`（Shrout & Fleiss 的六種組內相關係數，含信賴區間） |
 
 ## 幾個設計上的選擇
 
@@ -62,7 +64,12 @@ statkit 對照組.csv 實驗組.csv --column score --format text
 statkit describe data.csv --column score
 statkit adjust 0.001 0.02 0.04 0.3 --method holm
 statkit power --effect-size 0.5        # 80% 檢定力每組需要幾人
+statkit posthoc data.csv --group-col group --value-col score --method tukey   # 或 games-howell、dunn、ttest
+statkit tost a.csv b.csv --column score --low -0.5 --high 0.5                 # 成對資料加 --paired
+statkit icc ratings.csv --columns rater1 rater2 rater3                        # 六種 ICC
 ```
+
+`posthoc` 讀長格式 CSV（一列一個觀察值），`icc` 讀寬格式（一列一位受試者）。
 
 Excel 匯出的 CSV（UTF-8 含 BOM）可以直接讀。
 
